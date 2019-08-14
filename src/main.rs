@@ -104,12 +104,11 @@ impl<'env> Scope<'env> {
     }
 }
 
-async fn scope<'env, F, R>(f: F) -> R
+async fn scope<'env, F>(f: F)
 where
-    F: FnOnce(&mut Scope<'env>) -> R,
+    F: FnOnce(&mut Scope<'env>),
 {
     let mut scope = Scope::new();
-    let result = f(&mut scope);
+    f(&mut scope);
     scope.join_all().await;
-    result
 }
