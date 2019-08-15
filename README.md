@@ -22,3 +22,16 @@ nc localhost 8080 > mandelbrot.png
 [async/await syntax]: https://rust-lang.github.io/async-book/01_getting_started/04_async_await_primer.html
 [echo server example in the tokio crate]: https://tokio.rs/blog/2019-08-alphas/
 [mandelbrot set plotter]: https://github.com/ProgrammingRust/mandelbrot
+
+## TODO
+
+I've noticed that Tokio doesn't do a great job of utilizing all CPU cores when executing the
+futures to render different bands in the Mandelbrot set being generated. A comment on the
+threadpool implementation, in fact, states:
+
+> The Tokio thread pool supports scheduling futures and processing them on multiple CPU cores. It
+> is optimized for the primary Tokio use case of many independent tasks with limited computation
+> and with most tasks waiting on I/O.
+
+Consequently, I want to explore using a dedicated CPU pool for rendering the Mandelbrot set so
+we can allow the Tokio threadpool to focus on performing short IO tasks.
