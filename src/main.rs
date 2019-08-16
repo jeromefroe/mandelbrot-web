@@ -4,22 +4,26 @@ mod mandelbrot;
 
 use mandelbrot::{encode_image, parse_pair, pixel_to_point, render};
 
+use futures::executor::ThreadPool;
 use futures::future::join_all;
+use futures::task::SpawnExt;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cpu_pool = ThreadPool::new()?;
+
     let addr = "127.0.0.1:8080".parse()?;
     let mut listener = TcpListener::bind(&addr)?;
 
     loop {
         let (socket, _) = listener.accept().await?;
-        tokio::spawn(handler(socket));
+        tokio::spawn(handler(socket, cpu_pool.clone()));
     }
 }
 
-async fn handler(mut socket: TcpStream) {
+async fn handler(mut socket: TcpStream, mut cpu_pool: ThreadPool) {
     let mut buf = [0; 1024];
 
     let n = match socket.read(&mut buf).await {
@@ -82,14 +86,22 @@ async fn handler(mut socket: TcpStream) {
     let mut futures = Vec::with_capacity(bands.len());
 
     for (i, band) in bands.into_iter() {
-        futures.push(async move {
+        let handle = cpu_pool.spawn_with_handle(async move {
             let top = i;
             let band_bounds = (bounds.0, 1);
             let band_upper_left = pixel_to_point(bounds, (0, top), upper_left, lower_right);
             let band_lower_right =
                 pixel_to_point(bounds, (bounds.0, top + 1), upper_left, lower_right);
             render(band, band_bounds, band_upper_left, band_lower_right);
-        })
+        });
+
+        match handle {
+            Ok(future) => futures.push(future),
+            Err(e) => {
+                // Need to wait for futures so pixels isn't dropped before the futures with
+                // references have completed.
+            }
+        }
     }
 
     join_all(futures).await;
