@@ -5,7 +5,7 @@ authors = ["Jerome Froelich <jeromefroelich@hotmail.com>"]
 edition = "2018"
 
 [dependencies]
-futures-preview = "=0.3.0-alpha.17"
-tokio = "=0.2.0-alpha.1"
-num = "0.2.0"
-image = "0.22.1"
+futures = "0.3"
+tokio = { version = "1.25.0", features = ["full"] }
+num = "0.4.0"
+image = "0.24.5"

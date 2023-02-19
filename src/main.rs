@@ -1,17 +1,15 @@
-#![feature(async_await)]
-
 mod mandelbrot;
 
-use mandelbrot::{encode_image, parse_pair, pixel_to_point, render};
+use mandelbrot::{parse_pair, pixel_to_point, render};
 
 use futures::future::join_all;
+use image::{GrayImage, ImageEncoder};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "127.0.0.1:8080".parse()?;
-    let mut listener = TcpListener::bind(&addr)?;
+    let listener = TcpListener::bind("127.0.0.1:8080").await?;
 
     loop {
         let (socket, _) = listener.accept().await?;
@@ -73,34 +71,36 @@ async fn handler(mut socket: TcpStream) {
         }
     };
 
-    let mut pixels = vec![0; bounds.0 * bounds.1];
+    let mut pixels = GrayImage::new(bounds.0 as u32, bounds.1 as u32);
 
     // Divde pixels into horizontal bands. We could probably fine-tune the size of the bands.
     // For example, if the image is small we may want to compute multiple in a single unit of
     // work. I'll leave that as a future exercise for now.
-    let bands = pixels.chunks_mut(bounds.0).enumerate();
+    let bands = pixels.enumerate_rows_mut();
     let mut futures = Vec::with_capacity(bands.len());
 
-    for (i, band) in bands.into_iter() {
+    for (row, band) in bands.into_iter() {
         futures.push(async move {
-            let top = i;
-            let band_bounds = (bounds.0, 1);
-            let band_upper_left = pixel_to_point(bounds, (0, top), upper_left, lower_right);
+            let band_upper_left = pixel_to_point(bounds, (0, row), upper_left, lower_right);
             let band_lower_right =
-                pixel_to_point(bounds, (bounds.0, top + 1), upper_left, lower_right);
-            render(band, band_bounds, band_upper_left, band_lower_right);
+                pixel_to_point(bounds, (bounds.0 as u32, row + 1), upper_left, lower_right);
+            render(band, band_upper_left, band_lower_right);
         })
     }
 
     join_all(futures).await;
 
-    let img = match encode_image(&pixels, bounds) {
-        Ok(img) => img,
-        Err(e) => {
-            println!("unable to encode pixels into a PNG image: {:?}", e);
-            return;
-        }
-    };
+    let mut img = Vec::with_capacity(pixels.len());
+
+    let encoder = image::codecs::png::PngEncoder::new(&mut img);
+    encoder
+        .write_image(
+            &pixels,
+            bounds.0 as u32,
+            bounds.1 as u32,
+            image::ColorType::L8,
+        )
+        .unwrap();
 
     if let Err(e) = socket.write_all(&img).await {
         println!("failed to write image to socket: {:?}", e);
